@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Jellyfin.Extensions;
 
 namespace Jellyfin.Plugin.AniList.Providers.AniList
@@ -17,8 +18,10 @@ namespace Jellyfin.Plugin.AniList.Providers.AniList
     /// 🛈 https://anilist.gitbook.io/anilist-apiv2-docs
     /// 🛈 THIS IS AN UNOFFICAL API INTERFACE FOR JELLYFIN
     /// </summary>
-    public class AniListApi
+    public class AniListApi(IHttpClientFactory httpClientFactory, ILogger<AniListApi> logger)
     {
+        internal const string AnilistHttpClient = "AnilistHttpClient";
+
         private const string BaseApiUrl = "https://graphql.anilist.co/";
 
         private const string SearchAnimeGraphqlQuery = """
@@ -209,6 +212,8 @@ namespace Jellyfin.Plugin.AniList.Providers.AniList
         /// <returns></returns>
         public async Task<Media> GetAnime(string id, CancellationToken cancellationToken)
         {
+            logger.LogInformation("Getting anime. Id: {Id}", id);
+
             RootObject result = await WebRequestAPI(
                 new GraphQlRequest {
                     Query = GetAnimeGraphqlQuery,
@@ -239,6 +244,8 @@ namespace Jellyfin.Plugin.AniList.Providers.AniList
         /// <returns></returns>
         public async Task<List<MediaSearchResult>> Search_GetSeries_list(string title, CancellationToken cancellationToken)
         {
+            logger.LogInformation("Searching anime. Query: {Query}", title);
+
             RootObject result = await WebRequestAPI(
                 new GraphQlRequest {
                     Query = SearchAnimeGraphqlQuery,
@@ -274,6 +281,8 @@ namespace Jellyfin.Plugin.AniList.Providers.AniList
 
         public async Task<Staff> GetStaff(int id, CancellationToken cancellationToken)
         {
+            logger.LogInformation("Getting staff. Id: {Id}", id);
+
             RootObject result = await WebRequestAPI(
                 new GraphQlRequest {
                     Query = GetStaffGraphqlQuery,
@@ -287,6 +296,8 @@ namespace Jellyfin.Plugin.AniList.Providers.AniList
 
         public async Task<List<Staff>> SearchStaff(string query, CancellationToken cancellationToken)
         {
+            logger.LogInformation("Searching staff. Query: {Query}", query);
+
             RootObject result = await WebRequestAPI(
                 new GraphQlRequest {
                     Query = SearchStaffGraphqlQuery,
@@ -305,10 +316,12 @@ namespace Jellyfin.Plugin.AniList.Providers.AniList
         /// <returns></returns>
         private async Task<RootObject> WebRequestAPI(GraphQlRequest request, CancellationToken cancellationToken)
         {
-            var httpClient = Plugin.Instance.GetHttpClient();
+            HttpClient httpClient = httpClientFactory.CreateClient(AnilistHttpClient);
 
-            using HttpContent content = new StringContent(JsonSerializer.Serialize(request), Encoding.UTF8, "application/json");
-            using var response = await httpClient.PostAsync(BaseApiUrl, content, cancellationToken).ConfigureAwait(false);
+            using HttpContent payload = new StringContent(JsonSerializer.Serialize(request), Encoding.UTF8, "application/json");
+            using HttpResponseMessage response = await httpClient.PostAsync(BaseApiUrl, payload, cancellationToken).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+
             using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
 
             return await JsonSerializer.DeserializeAsync<RootObject>(responseStream, cancellationToken: cancellationToken).ConfigureAwait(false);
